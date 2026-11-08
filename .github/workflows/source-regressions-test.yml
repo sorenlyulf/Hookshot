@@ -257,18 +257,22 @@ jobs:
           ref: 496543121ce6419f23d6fa5d7194ba66c36212d2
           path: _deps/spirv-headers
           persist-credentials: false
+      # Inside a job container, ${{ github.workspace }} and ${{ runner.temp }} expand
+      # to the HOST paths (/home/runner/work/...), which do not exist in the
+      # container. The GITHUB_WORKSPACE and RUNNER_TEMP environment variables hold
+      # the in-container paths (/__w/...), so use those.
       - name: Configure the focused real-IR fixture
-        run: >-
-          CC=clang CXX=clang++ cmake -S tests/global_load_16 -B ${{ runner.temp }}/global-load-16
-          -DREPO_ROOT=${{ github.workspace }}
-          -DSPIRV_HEADERS_ROOT=${{ github.workspace }}/_deps/spirv-headers
+        run: |
+          CC=clang CXX=clang++ cmake -S tests/global_load_16 -B "$RUNNER_TEMP/global-load-16" \
+            -DREPO_ROOT="$GITHUB_WORKSPACE" \
+            -DSPIRV_HEADERS_ROOT="$GITHUB_WORKSPACE/_deps/spirv-headers"
       - name: Build the focused fixture
-        run: cmake --build ${{ runner.temp }}/global-load-16 --parallel 2
+        run: cmake --build "$RUNNER_TEMP/global-load-16" --parallel 2
       - name: Emit and inspect real IR modules
-        run: ${{ runner.temp }}/global-load-16/global_load_16_ir ${{ runner.temp }}/global-load-16/modules
+        run: '"$RUNNER_TEMP/global-load-16/global_load_16_ir" "$RUNNER_TEMP/global-load-16/modules"'
       - name: Validate every emitted module
         shell: bash
         run: |
-          for module in "${{ runner.temp }}"/global-load-16/modules/*.spv; do
+          for module in "$RUNNER_TEMP"/global-load-16/modules/*.spv; do
             spirv-val --target-env vulkan1.3 "$module"
           done
