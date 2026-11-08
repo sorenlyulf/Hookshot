@@ -1,3 +1,5 @@
+***This repo is a fork of [Rexed/Hookshot](https://github.com/NotRexed/Hookshot). My goal is to bring compatibility to older machines, and a wider range of Linux distros. I am starting with CachyOS(Arch) and will work on others when I feel satisfied with my work.***
+
 <h1 align="center">
   <br>
   <a>
