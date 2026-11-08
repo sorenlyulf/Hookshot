@@ -75,7 +75,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Hookshot-linux-x86_64
+          name: Hookshot-22.04.LTS.Ubuntu.-x86_64
           path: build-linux/*.AppImage
           if-no-files-found: error
 
