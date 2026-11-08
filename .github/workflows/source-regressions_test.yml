@@ -156,8 +156,8 @@ jobs:
           - distro: ubuntu
             runner: ubuntu-24.04
           - distro: archlinux
-            runner: archlinux:latest
-    runs-on: ${{ matrix.runner }}
+            container: archlinux:latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -252,8 +252,8 @@ jobs:
           - distro: ubuntu
             runner: ubuntu-24.04
           - distro: archlinux
-            runner: archlinux:latest
-    runs-on: ${{ matrix.runner }}
+            container: archlinux:latest
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out source
