@@ -274,13 +274,16 @@ jobs:
           fi
       - name: Configure the focused real-IR fixture
         run: >-
-          CC=clang CXX=clang++ cmake -S tests/global_load_16 -B ${{ runner.temp }}/global-load-16
+          CC=clang CXX=clang++ cmake -G "Unix Makefiles" -S tests/global_load_16 -B ${{ runner.temp }}/global-load-16
           -DREPO_ROOT=${{ github.workspace }}
           -DSPIRV_HEADERS_ROOT=${{ github.workspace }}/_deps/spirv-headers
+
       - name: Build the focused fixture
         run: cmake --build ${{ runner.temp }}/global-load-16 --parallel 2
+        
       - name: Emit and inspect real IR modules
         run: ${{ runner.temp }}/global-load-16/global_load_16_ir ${{ runner.temp }}/global-load-16/modules
+        
       - name: Validate every emitted module
         shell: bash
         run: |
