@@ -180,7 +180,7 @@ jobs:
         run: python -I -B tests/test_failure_reason.py
       - name: C++ compiler for the import-hold check
         run: |
-          if [ "${{ matrix.distro }}" = ubuntu ]; then
+          if [ "${{ matrix.distro }}" = ubuntu-24.04 ]; then
             apt update && sudo apt install -y g++
           else
             pacman -S --noconfirm --needed gcc python
@@ -267,7 +267,7 @@ jobs:
           persist-credentials: false
       - name: Install Clang C++20, CMake and SPIR-V validator
         run: |
-          if [ "${{ matrix.distro }}" = ubuntu ]; then
+          if [ "${{ matrix.distro }}" = ubuntu.24.04 ]; then
             apt update && sudo apt install -y clang spirv-tools
           else
             pacman -S --noconfirm --needed clang cmake spirv-tools
