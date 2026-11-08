@@ -148,15 +148,15 @@ concurrency:
 
 jobs:
   python:
-    name: Python source checks (${{ matrix.distro }})
+    name: Python source checks (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - distro: ubuntu
-            runner: ubuntu-24.04
+            runner: ubuntu-latest
             container: archlinux:latest
-    runs-on: (${{ matrix.distro }})
+    runs-on: (${{ matrix.runner }})
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -164,7 +164,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python
-        if: matrix.distro == 'ubuntu'
+        if: matrix.runner == 'ubuntu'
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
@@ -180,10 +180,10 @@ jobs:
         run: python -I -B tests/test_failure_reason.py
       - name: C++ compiler for the import-hold check
         run: |
-          if [ "${{ matrix.distro }}" = ubuntu ]; then
+          if [ "${{ matrix.runner }}" = ubuntu ]; then
             sudo apt-get update && sudo apt-get install -y g++
           else
-            pacman -S --noconfirm --needed gcc
+            pacman -S --noconfirm --needed gcc python
           fi
       - name: Check failed-import backoff
         run: python -I -B tests/test_import_hold.py
@@ -243,19 +243,17 @@ jobs:
         run: python -I -B tests/test_hookshot_launch.py
 
   spirv-global16:
-    name: SPIR-V global halfword lowering (${{ matrix.distro }})
+    name: SPIR-V global halfword lowering (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - distro: ubuntu
-            runner: ubuntu-24.04
+            runner: ubuntu-latest
             container: archlinux:latest
-    runs-on: (${{ matrix.distro }})
+    runs-on: (${{ matrix.runner }})
     timeout-minutes: 20
     steps:
-      - name: Dependencies
-        run: pacman -Syu --noconfirm --needed python
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
