@@ -101,6 +101,7 @@ static void keys_update(void) {
         v[VK_RETURN] = K(40) || K(88), v[VK_ESCAPE] = K(41), v[VK_BACK] = K(42), v[VK_TAB] = K(43), v[VK_SPACE] = K(44);
         v[VK_OEM_MINUS] = K(45), v[VK_OEM_PLUS] = K(46), v[VK_OEM_1] = K(51), v[VK_OEM_3] = K(53);
         v[VK_OEM_COMMA] = K(54), v[VK_OEM_PERIOD] = K(55), v[VK_OEM_2] = K(56), v[VK_CAPITAL] = K(57);
+        v[VK_OEM_4] = K(47), v[VK_OEM_6] = K(48), v[VK_OEM_5] = K(49), v[VK_OEM_7] = K(52);   /* ([ ] \ ') */
         for (int i = 0; i < 12; i++) v[VK_F1 + i] = K(58 + i);
         v[VK_PAUSE] = K(72), v[VK_INSERT] = K(73), v[VK_HOME] = K(74), v[VK_PRIOR] = K(75), v[VK_DELETE] = K(76);
         v[VK_END] = K(77), v[VK_NEXT] = K(78), v[VK_RIGHT] = K(79), v[VK_LEFT] = K(80), v[VK_DOWN] = K(81), v[VK_UP] = K(82);
@@ -122,6 +123,7 @@ static void keys_update(void) {
 /* ---- the window ---- */
 static void *window;
 static volatile int renderer;   /* the renderer presents into the window */
+static HANDLE renderer_up;   /* (set once rx_start has returned, ready or not: hos_renderer_wait) */
 static int fullscreen;
 
 static int create_surface(void *w, void *instance, void *surface) { return sdl.Vulkan_CreateSurface(w, instance, surface); }
@@ -153,7 +155,15 @@ static DWORD WINAPI renderer_main(void *p) {
         sdl.Vulkan_GetDrawableSize(window, &w, &h);
         if (w > 0 && h > 0) rx_resize(w, h);
     }
+    SetEvent(renderer_up);
     return 0;
+}
+
+/* (hookshot) host/display.c's: the game's first work for the GPU waits for the renderer (nvn_native.c), so nothing it submits while
+   the shaders are prepared is lost. Without a window the renderer starts on the game's own thread, before this is asked */
+void hos_renderer_wait(void) {
+    { const char *e = getenv("HOS_NO_RENDERER_WAIT"); if (e && atoi(e) != 0) return; }
+    if (renderer_up) WaitForSingleObject(renderer_up, INFINITE);
 }
 
 static volatile int start_asked;
@@ -189,6 +199,7 @@ void hos_display_start(void) {
         rx_start(NULL);
         return;
     }
+    renderer_up = CreateEventA(NULL, TRUE, FALSE, NULL);
     __atomic_store_n(&start_asked, 1, __ATOMIC_RELEASE);
 }
 
@@ -210,6 +221,7 @@ void hos_display_loop(void) {
     if (!window) {
         hos_log("display: SDL_CreateWindow: %s: no window", sdl.GetError());
         rx_start(NULL);
+        SetEvent(renderer_up);
         for (;;) Sleep(1000);
     }
     vk_window.window = window;

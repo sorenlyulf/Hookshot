@@ -1,0 +1,85 @@
+# The Linux AppImage (x86_64), built on Arch Linux: Hookshot Builder with the compiler, Python, libraries and the Vulkan
+# back end it builds the game with on the player's PC (scripts/linux/deps.sh, scripts/linux/appimage.sh). No game data is
+# involved. Built in the archlinux container (rolling release, so current glibc and GCC). A workflow artifact on every
+# run; on a tag, also an asset of that tag's release.
+name: Linux AppImage (Arch)
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: linux-appimage-arch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  appimage:
+    runs-on: archlinux-latest
+    container: archlinux:latest
+    timeout-minutes: 150
+    env:
+      # No FUSE inside the container: let appimagetool-style tools unpack and run themselves
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed
+          # (GCC on Arch is current: libstdc++ has <format> for the Vulkan back end's C++20, no toolchain PPA needed)
+          pacman -S --noconfirm --needed \
+            git ca-certificates curl xz zstd file unzip python \
+            base-devel nasm meson ninja cmake pkgconf \
+            libx11 libxext libxrandr libxcursor libxi libxss libxfixes libxinerama \
+            libxkbcommon wayland wayland-protocols libdecor libglvnd libdrm mesa \
+            libpulse alsa-lib pipewire systemd-libs dbus
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/cache@v4
+        with:
+          path: build-linux/deps
+          key: linux-deps-arch-${{ hashFiles('scripts/linux/deps.sh') }}
+
+      - name: Dependencies (LLVM, Python, FFmpeg with dav1d, SDL2, Vulkan headers)
+        run: scripts/linux/deps.sh
+
+      # work/: the lists and the play profile made on the development PC (addresses and counts, no game code). When the
+      # repository does not carry them, the ones in the latest release's HookshotBuilder.zip are used; without either
+      # the game is built all the same, a little slower in play.
+      - name: Play profile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f work/hot_order.txt ]; then echo "work/ is in the repository"; exit 0; fi
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/releases/latest" |
+                python3 -c 'import json,sys; print(next((a["url"] for a in json.load(sys.stdin).get("assets", []) if a["name"] == "HookshotBuilder.zip"), ""))') || true
+          if [ -z "$url" ]; then echo "no HookshotBuilder.zip in the latest release: built without the profile"; exit 0; fi
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o /tmp/builder.zip "$url"
+          unzip -q -o /tmp/builder.zip 'HookshotBuilder/tools/work/*' -d /tmp/builder || true
+          mkdir -p work/image
+          for f in hot_funcs.txt hot_order.txt hookshot_pieces.prof image/chunks.txt; do
+            [ -f "/tmp/builder/HookshotBuilder/tools/work/$f" ] && cp "/tmp/builder/HookshotBuilder/tools/work/$f" "work/$f"
+          done
+          ls -la work work/image
+
+      - name: AppImage
+        run: scripts/linux/appimage.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hookshot-linux-arch-x86_64
+          path: build-linux/*.AppImage
+          if-no-files-found: error
+
+      - name: Release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build-linux/*.AppImage

@@ -1,8 +1,17 @@
 [Desktop Entry]
-Type=Application
-Name=Hookshot Builder
+Actions=Play;
+Categories=Game;
+Comment[en_US]=Builds Ocarina of Time for PC from your own copy of the game
 Comment=Builds Ocarina of Time for PC from your own copy of the game
 Exec=AppRun
 Icon=hookshot
-Categories=Game;
+Name[en_US]=Hookshot Builder
+Name=Hookshot Builder
+StartupNotify=true
 Terminal=false
+Type=Application
+
+[Desktop Action Play]
+Exec=AppRun --play
+Icon=hookshot
+Name=Play

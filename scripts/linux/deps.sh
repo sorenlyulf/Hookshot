@@ -1,6 +1,11 @@
 #!/bin/bash
 # What the Linux AppImage carries, fetched and built into build-linux/deps (or $DEPS): each part once, kept while its
-# version stays the same. Run on the oldest system the AppImage is for (CI: Ubuntu 22.04, glibc 2.35).
+# version stays the same. Works on Arch Linux / CachyOS (and still on Ubuntu / Debian).
+#
+# NOTE: for the AppImage to run the game on as many systems as possible it should be built on the OLDEST system it is
+# for (Ubuntu 22.04, glibc 2.35). On Arch the AppImage will carry Arch's much newer glibc, so the games it builds will
+# need that glibc or newer. To get the old baseline on an Arch PC, run both scripts inside an Ubuntu 22.04 container
+# (distrobox / podman / docker).
 #
 #   emsdk/upstream/   LLVM's clang and lld (the layout third_party/a64-kit/tools/toolchain.py finds through EMSDK):
 #                     the player's PC compiles the game with them. The play profile (work/hookshot_pieces.prof) wants
@@ -11,6 +16,11 @@
 #   sdl2/             libSDL2-2.0.so.0: the window, sound and controllers, placed beside the game
 #   cpm/              Vulkan-Headers, SPIRV-Headers and VulkanMemoryAllocator, in the CPM cache layout nx2/build.py reads
 #   appimagetool      the AppImage packer
+#
+# Arch packages needed (install once):
+#   sudo pacman -S --needed base-devel cmake ninja meson nasm curl xz pkgconf git \
+#       libx11 libxext libxcursor libxi libxrandr libxfixes libxss libxkbcommon \
+#       wayland wayland-protocols libdecor libpulse pipewire alsa-lib libglvnd mesa libdrm
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 DEPS=${DEPS:-$PWD/build-linux/deps}
@@ -28,6 +38,22 @@ VK_HEADERS=v1.4.345
 SPIRV_HEADERS=vulkan-sdk-1.4.341.0
 VMA=v3.3.0
 APPIMAGETOOL=1.9.1
+
+# ---- host check: which build tools are missing, with the matching install hint ----
+is_arch() { [ -r /etc/os-release ] && . /etc/os-release && case " ${ID:-} ${ID_LIKE:-} " in *" arch "*) return 0;; esac; return 1; }
+missing=()
+for c in curl tar xz make cmake ninja meson nasm pkg-config strip gcc g++; do
+    command -v "$c" >/dev/null 2>&1 || missing+=("$c")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "missing build tools: ${missing[*]}" >&2
+    if is_arch; then
+        echo "install them with: sudo pacman -S --needed base-devel cmake ninja meson nasm curl xz pkgconf git" >&2
+    else
+        echo "install them with: sudo apt install build-essential cmake ninja-build meson nasm curl xz-utils pkg-config" >&2
+    fi
+    exit 1
+fi
 
 fetch() {   # url file
     if [ ! -f "$DL/$2" ]; then
@@ -92,11 +118,26 @@ fi
 
 # ---- SDL2 (its X11, Wayland and sound back ends load their libraries at run time) ----
 if ! done_for sdl2 "$SDL_VER"; then
+    # the back ends are only built when their development files are there: say so now instead of shipping a window-less SDL
+    sdl_missing=()
+    for m in x11 xext xcursor xi xrandr xfixes xscrnsaver xkbcommon wayland-client wayland-egl wayland-cursor libpulse libpipewire-0.3 alsa; do
+        pkg-config --exists "$m" 2>/dev/null || sdl_missing+=("$m")
+    done
+    command -v wayland-scanner >/dev/null 2>&1 || sdl_missing+=("wayland-scanner")
+    if [ ${#sdl_missing[@]} -gt 0 ]; then
+        echo "SDL2 development files missing for: ${sdl_missing[*]}" >&2
+        if is_arch; then
+            echo "install them with: sudo pacman -S --needed libx11 libxext libxcursor libxi libxrandr libxfixes libxss libxkbcommon wayland wayland-protocols libdecor libpulse pipewire alsa-lib libglvnd mesa libdrm" >&2
+        fi
+        exit 1
+    fi
     fetch "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VER/SDL2-$SDL_VER.tar.gz" sdl2.tar.gz
     rm -rf "$DEPS/src-sdl2" "$DEPS/sdl2"
     mkdir -p "$DEPS/src-sdl2" && tar -xzf "$DL/sdl2.tar.gz" -C "$DEPS/src-sdl2" --strip-components=1
+    # (CMAKE_POLICY_VERSION_MINIMUM: Arch ships CMake 4, which rejects projects that declare a CMake minimum below 3.5)
     cmake -S "$DEPS/src-sdl2" -B "$DEPS/src-sdl2/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=ON -DSDL_STATIC=OFF \
-        -DSDL_TEST=OFF -DSDL_X11=ON -DSDL_WAYLAND=ON -DSDL_PULSEAUDIO=ON -DSDL_PIPEWIRE=ON -DSDL_ALSA=ON
+        -DSDL_TEST=OFF -DSDL_X11=ON -DSDL_WAYLAND=ON -DSDL_PULSEAUDIO=ON -DSDL_PIPEWIRE=ON -DSDL_ALSA=ON \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     ninja -C "$DEPS/src-sdl2/build"
     mkdir -p "$DEPS/sdl2"
     cp -L "$DEPS/src-sdl2/build/libSDL2-2.0.so.0" "$DEPS/sdl2/libSDL2-2.0.so.0"
