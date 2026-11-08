@@ -154,7 +154,7 @@ jobs:
       matrix:
         include:
           - distro: ubuntu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             container: archlinux:latest
     runs-on: (${{ matrix.runner }})
     timeout-minutes: 10
@@ -249,7 +249,7 @@ jobs:
       matrix:
         include:
           - distro: ubuntu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             container: archlinux:latest
     runs-on: (${{ matrix.runner }})
     timeout-minutes: 20
