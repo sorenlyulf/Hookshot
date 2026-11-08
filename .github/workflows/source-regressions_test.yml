@@ -268,9 +268,9 @@ jobs:
       - name: Install Clang C++20, CMake and SPIR-V validator
         run: |
           if [ "${{ matrix.distro }}" = ubuntu.24.04 ]; then
-            apt update && sudo apt install -y clang spirv-tools
+            apt update && sudo apt install -y clang build-essential cmake spirv-tools
           else
-            pacman -Sy --noconfirm --needed clang cmake spirv-tools
+            pacman -Sy --noconfirm --needed clang base-devel cmake spirv-tools
           fi
       - name: Configure the focused real-IR fixture
         run: >-
