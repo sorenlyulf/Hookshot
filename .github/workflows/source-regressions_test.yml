@@ -148,15 +148,15 @@ concurrency:
 
 jobs:
   python:
-    name: Python source checks (${{ matrix.runner }})
+    name: Python source checks (${{ matrix.distro }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - distro: ubuntu
             runner: ubuntu-24.04
-            container: archlinux:latest
-    runs-on: (${{ matrix.runner }})
+    container: archlinux:latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -164,7 +164,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python
-        if: matrix.runner == 'ubuntu'
+         if matrix.distro == 'ubuntu'
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
@@ -180,7 +180,7 @@ jobs:
         run: python -I -B tests/test_failure_reason.py
       - name: C++ compiler for the import-hold check
         run: |
-          if [ "${{ matrix.runner }}" = ubuntu ]; then
+          if [ "${{ matrix.distro }}" = ubuntu ]; then
             sudo apt-get update && sudo apt-get install -y g++
           else
             pacman -S --noconfirm --needed gcc python
@@ -243,15 +243,15 @@ jobs:
         run: python -I -B tests/test_hookshot_launch.py
 
   spirv-global16:
-    name: SPIR-V global halfword lowering (${{ matrix.runner }})
+    name: SPIR-V global halfword lowering (${{ matrix.distro }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - distro: ubuntu
             runner: ubuntu-24.04
-            container: archlinux:latest
-    runs-on: (${{ matrix.runner }})
+    container: archlinux:latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out source
