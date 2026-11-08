@@ -11,6 +11,7 @@
    the game folder has no module map (image.json) to place data patches with. A mod's exefs folder is logged as left out.
    From Skybound's loader (NotRexed/SkyboundTotk a64-kit/hos/mods.c, MIT): its RomFS part. */
 #include "hos.h"
+#include "hos_paths.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,7 +140,7 @@ void hos_mods_init(const char *image_path) {
     if (getenv("HOS_MODS")) {
         snprintf(root, sizeof root, "%s", getenv("HOS_MODS"));
     } else {
-        GetModuleFileNameA(NULL, root, sizeof root);
+        hos_game_path_a(root, sizeof root);
         char *slash = (char *)last_sep(root);
         if (!slash) return;
         snprintf(slash + 1, sizeof root - (size_t)(slash + 1 - root), "mods");

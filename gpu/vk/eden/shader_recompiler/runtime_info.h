@@ -88,10 +88,16 @@ struct RuntimeInfo {
     VaryingState previous_stage_stores;
     /// Fragment stage after a mesh program: generic inputs it writes per primitive.
     std::bitset<32> per_primitive_generics{};
+    /// Fragment stage after a mesh program that draws points: generic inputs the hardware's point sprite
+    /// replaces with the coordinate within the point (s, t, 0, 1), as NVN's do with the generics the mesh
+    /// program leaves unwritten.
+    std::bitset<32> point_coord_generics{};
     std::map<IR::Attribute, IR::Attribute> previous_stage_legacy_stores_mapping;
 
     bool convert_depth_mode{};
     bool force_early_z{};
+    /// (hookshot) a mesh stage with no task stage before it: its workgroups start at the draw's first, as a task stage's do
+    bool mesh_without_task{};
 
     TessPrimitive tess_primitive{};
     TessSpacing tess_spacing{};

@@ -2,6 +2,7 @@
    The answers describe a docked console in English (HOS_LANGUAGE / language.txt: another language) with one user,
    "Player". */
 #include "hos.h"
+#include "hos_paths.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +34,7 @@ static const char *desired_language(void) {
     } else {
         char path[300] = "language.txt";
 #if !defined(__EMSCRIPTEN__)   /* (linux too: host/posix) */
-        DWORD n = GetModuleFileNameA(NULL, path, 260);
+        DWORD n = hos_game_path_a(path, 260);
         while (n > 0 && path[n - 1] != 92 && path[n - 1] != 47) n--;
         snprintf(path + n, sizeof path - n, "language.txt");
 #endif
@@ -90,7 +91,7 @@ static int handheld(void) {
         v = getenv("HOS_HANDHELD") && atoi(getenv("HOS_HANDHELD")) != 0;
         if (!getenv("HOS_HANDHELD")) {   /* (hookshot: the Insert menu's choice, gpu/vk/vk_menu.cpp) */
             char path[MAX_PATH];
-            const DWORD n = GetModuleFileNameA(NULL, path, MAX_PATH);
+            const DWORD n = hos_game_path_a(path, MAX_PATH);
             char *slash = n ? (strrchr(path, 92) ? strrchr(path, 92) : strrchr(path, 47)) : NULL;   /* (linux: '/') */
             if (slash) {
                 snprintf(slash + 1, (size_t)(path + MAX_PATH - slash - 1), "hookshot_options.ini");

@@ -269,6 +269,34 @@ static void realtime_step(int64_t now) {
     *slot = fps;
     if (!(steps++ % 3000)) hos_log("vi: real-time step on: ratio %.3f, game's frame rate %d", ratio, fps);
 }
+/* HOS_PRESENT_TRACE=<csv>: native game present-call returns, not GPU completion or display times.
+   Uses the existing frame ID/clock; a forced stop can lose the last second of buffered present records. */
+static void present_trace(int64_t frame, int64_t now) {
+    static FILE *file;
+    static char buffer[64 * 1024];
+    static int looked;
+    static int64_t last, flushed;
+    if (!looked) {
+        const char *path = getenv("HOS_PRESENT_TRACE");
+        looked = 1;
+        if (path && *path) {
+            file = fopen(path, "w");
+            if (!file) hos_log("vi: could not open present trace %s", path);
+        }
+        if (file) {
+            setvbuf(file, buffer, _IOFBF, sizeof buffer);
+            fputs("frame,return_ns,interval_ns\n", file);
+            flushed = now;
+        }
+    }
+    if (!file) return;
+    fprintf(file, "%lld,%lld,%lld\n", (long long)frame, (long long)now, (long long)(frame > 1 ? now - last : 0));
+    last = now;
+    if (now - flushed >= 1000000000LL) {
+        fflush(file);
+        flushed = now;
+    }
+}
 void hos_vi_native_presented(void) {
     static long long scan_n;
     scan_dt(++scan_n);
@@ -287,6 +315,7 @@ void hos_vi_native_presented(void) {
         shown_count = n + 1;
     }
     const int64_t n = InterlockedIncrement64(&presents);
+    present_trace(n, now);
     {   /* HOS_MKW_INTERVAL=<0|1|2>: the interval MKW's pacer is held at, through its own override (+0x210, any
            non-zero value is used as the interval): 1 (the default): a steady 60 fps; 2: 30; 0: the game's choice,
            which with frames between 16.7 and 33 ms swings between the two (25-27 fps, stutters). Its timing counts

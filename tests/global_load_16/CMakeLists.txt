@@ -17,19 +17,8 @@ file(GLOB_RECURSE OPTIMIZATION_SOURCES CONFIGURE_DEPENDS
 file(GLOB_RECURSE SIRIT_SOURCES CONFIGURE_DEPENDS
     "${REPO_ROOT}/gpu/vk/sirit/src/*.cpp")
 
-# The fixture source may live next to this file (tests/global_load_16/) or one
-# level up (tests/). Use whichever exists so a move can't break the build.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/global_load_16_ir.cpp")
-    set(FIXTURE_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/global_load_16_ir.cpp")
-elseif(EXISTS "${REPO_ROOT}/tests/global_load_16_ir.cpp")
-    set(FIXTURE_SOURCE "${REPO_ROOT}/tests/global_load_16_ir.cpp")
-else()
-    message(FATAL_ERROR "global_load_16_ir.cpp not found in "
-        "${CMAKE_CURRENT_SOURCE_DIR} or ${REPO_ROOT}/tests")
-endif()
-
 add_executable(global_load_16_ir
-    "${FIXTURE_SOURCE}"
+    "${REPO_ROOT}/tests/global_load_16_ir.cpp"
     ${BACKEND_SOURCES}
     ${IR_SOURCES}
     ${OPTIMIZATION_SOURCES}

@@ -2,8 +2,10 @@
 follows its @@ lines (make_game.py's docstring), then offers to start the game. The AppImage starts it (builder/linux/AppRun),
 with the compiler, sysroot and libraries it brings in the environment.
 
-    hookshot_builder.py           the window
-    hookshot_builder.py --play    the game built last time, if there is one (else the window)
+    hookshot_builder.py                     the window. Its button is Build, Update, Play, or Update builder
+    hookshot_builder.py --play              the game built last time, if there is one (else the window)
+    hookshot_builder.py --launch <folder>   that folder's launcher: Play, and Update when a newer release is out
+    hookshot_builder.py --update <folder>   download the new release (only parts that changed) and build the folder again
 """
 import os
 import queue
@@ -19,14 +21,26 @@ from tkinter import filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.environ.get("HOOKSHOT_TOOLS") or os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "nx2"))
 sys.path.insert(0, os.path.join(ROOT, "third_party", "a64-kit", "tools"))
+import linux_update  # noqa: E402  (the release check and the part download)
 import make_game  # noqa: E402  (LANGUAGES, BUILD_ID)
-import toolchain  # noqa: E402  (default_jobs)
+import toolchain  # noqa: E402  (default_jobs: RX_JOBS)
 
 CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "hookshot", "builder.ini")
 STAGES = {"read": "Reading your game files", "lift": "Translating the game to PC code", "compile": "Compiling",
           "finish": "Putting the game folder together"}
+
+
+def left_text(seconds):
+    """The countdown make_game.py and build.py work out from this PC's earlier builds."""
+    if seconds < 45:
+        return "less than a minute left"
+    if seconds < 90:
+        return "about a minute left"
+    minutes = int(round(seconds / 60))
+    return "about %d h %d min left" % (minutes // 60, minutes % 60) if minutes >= 60 else "about %d minutes left" % minutes
 
 
 def load_config():
@@ -48,14 +62,18 @@ def save_config(cfg):
 
 
 def game_ready(folder):
-    return bool(folder) and os.path.isfile(os.path.join(folder, "hookshot")) and os.path.isfile(os.path.join(folder, "image.bin"))
+    return linux_update.game_exe(folder) is not None
 
 
 def play(folder):
-    """the game, on its own (it outlives this window), from its folder"""
+    """the game, on its own (it outlives this window), from its folder. The launcher already asked about updates."""
+    exe = linux_update.game_exe(folder)
+    if not exe:
+        return
     env = {k: v for k, v in os.environ.items() if not k.startswith(("HOOKSHOT_", "PYTHON", "APPDIR", "APPIMAGE", "ARGV0", "OWD"))}
     env.pop("LD_LIBRARY_PATH", None)
-    subprocess.Popen([os.path.join(folder, "hookshot")], cwd=folder, env=env, start_new_session=True,
+    env["HOOKSHOT_NO_UPDATE_CHECK"] = "1"
+    subprocess.Popen([exe], cwd=folder, env=env, start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -63,6 +81,9 @@ def desktop_exec(path):
     """One Exec argument. A % in the path is a field code, so "100% Games" is rejected and the menu entry does not run."""
     escaped = path.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
     return '"%s"' % escaped
+
+
+APP_ID = "io.github.NotRexed.Hookshot"   # (the game's window names itself so: host/posix/display_sdl.c's HOS_APP_ID)
 
 
 def add_to_menu(folder):
@@ -75,7 +96,8 @@ def add_to_menu(folder):
     os.makedirs(apps, exist_ok=True)
     with open(os.path.join(apps, "hookshot.desktop"), "w", encoding="utf-8") as f:
         f.write("[Desktop Entry]\nType=Application\nName=Hookshot\nComment=The Legend of Zelda: Ocarina of Time, built from your copy\n"
-                "Exec=%s\nPath=%s\nIcon=%s\nCategories=Game;\nTerminal=false\n" % (desktop_exec(os.path.join(folder, "hookshot")), folder, icon))
+                "Exec=%s\nPath=%s\nIcon=%s\nCategories=Game;\nTerminal=false\nStartupWMClass=%s\n"
+                % (desktop_exec(os.path.join(folder, "hookshot")), folder, icon, APP_ID))
 
 
 def free_gb(path):
@@ -87,8 +109,17 @@ def free_gb(path):
         return None
 
 
+def _arg(name):
+    args = sys.argv[1:]
+    if name in args:
+        index = args.index(name)
+        if index + 1 < len(args):
+            return args[index + 1]
+    return None
+
+
 class Builder(tk.Tk):
-    def __init__(self):
+    def __init__(self, launch=None, update=None, fetched=False, tag=None):
         super().__init__()
         self.title("Hookshot Builder")
         self.minsize(620, 420)
@@ -96,6 +127,15 @@ class Builder(tk.Tk):
         self.proc = None
         self.lines = queue.Queue()
         self.started = 0.0
+        self.launch_folder = launch
+        self.update_folder = update
+        self.fetched = fetched
+        self.update_tag = tag
+        self.mode = "build"
+        self.latest = None
+        self.source_picked = False
+        self.tools = linux_update.tools_tag(linux_update.running_root() or ROOT)
+        self.status = tk.StringVar()
         self.kind = tk.StringVar(value=self.cfg.get("kind", "nup"))
         self.nup = tk.StringVar(value=self.cfg.get("nup", ""))
         self.romfs = tk.StringVar(value=self.cfg.get("romfs", ""))
@@ -110,12 +150,20 @@ class Builder(tk.Tk):
         self.time_text = tk.StringVar()
         self.pad = {"padx": 12, "pady": 4}
         self.page = None
-        self.show_form()
+        self.build_button = None
+        if update is not None:
+            self.after(200, self.begin_update)
+        elif launch:
+            self.show_launch(launch)
+        else:
+            self.show_form()
+            self.after(200, self.lookup_latest)
         self.after(100, self.pump)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
     # ---- the form ----
     def show_form(self):
+        self.title("Hookshot Builder")
         if self.page:
             self.page.destroy()
         f = self.page = ttk.Frame(self)
@@ -152,9 +200,13 @@ class Builder(tk.Tk):
         row += 1
         ttk.Label(f, textvariable=self.space_text).grid(row=row, column=0, columnspan=3, sticky="w", **self.pad)
         row += 1
-        ttk.Button(f, text="Build", command=self.build).grid(row=row, column=0, columnspan=3, sticky="we", padx=12, pady=12)
+        ttk.Label(f, textvariable=self.status, wraplength=560).grid(row=row, column=0, columnspan=3, sticky="w", **self.pad)
+        row += 1
+        self.build_button = ttk.Button(f, text="Build", command=self.build)
+        self.build_button.grid(row=row, column=0, columnspan=3, sticky="we", padx=12, pady=12)
         self.out.trace_add("write", lambda *a: self.update_space())
         self.update_space()
+        self.apply_mode()
 
     def path_row(self, f, row, label, var, browse):
         ttk.Label(f, text=label).grid(row=row, column=0, sticky="w", **self.pad)
@@ -165,6 +217,8 @@ class Builder(tk.Tk):
         p = filedialog.askopenfilename(title="Your game's .nup", filetypes=[("Switch 2 game package", "*.nup"), ("All files", "*")])
         if p:
             var.set(p)
+            self.source_picked = True
+            self.apply_mode()
             self.check_version()
 
     def pick_dir(self, var):
@@ -172,11 +226,14 @@ class Builder(tk.Tk):
         if p:
             var.set(p)
             if var is self.exefs:
+                self.source_picked = True
+                self.apply_mode()
                 self.check_version()
 
     def update_space(self):
         gb = free_gb(self.out.get())
         self.space_text.set("%s has %.0f GB free." % (self.out.get(), gb) if gb is not None else "")
+        self.apply_mode()
 
     def check_version(self):
         args = ["--nup", self.nup.get()] if self.kind.get() == "nup" else ["--exefs", self.exefs.get()]
@@ -190,12 +247,148 @@ class Builder(tk.Tk):
                 t = make_game.reported(l)
                 if t is not None:
                     said.append(t)
-            text = said[-1] if said else "The version could not be read."
+            tail = [l for l in (r.stderr or "").splitlines() if l.strip()]
+            text = said[-1] if said else (tail[-1] if tail else "The version could not be read.")
             self.lines.put(("check", text))
         threading.Thread(target=run, daemon=True).start()
 
+    def lookup_latest(self):
+        def run():
+            forced = os.environ.get("HOOKSHOT_LATEST_TAG")
+            tag = None if forced == "none" else (forced or linux_update.latest_tag())
+            self.lines.put(("latest", tag or ""))
+        threading.Thread(target=run, daemon=True).start()
+
+    def apply_mode(self):
+        if self.launch_folder and self.build_button is None:
+            self.apply_launch()
+            return
+        folder = self.out.get().strip()
+        game, kept = linux_update.game_version(os.path.expanduser(folder)) if folder else (None, False)
+        self.mode = linux_update.choose_mode(game, self.tools, self.latest, self.source_picked, kept)
+        button = self.build_button
+        if button is None:
+            return
+        try:
+            if not button.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        button.configure(text={"update-game": "Update", "up-to-date": "Play", "update-builder": "Update builder",
+                                "build": "Build"}[self.mode])
+        target = self.latest or self.tools
+        if self.mode == "update-game":
+            self.status.set("Hookshot %s is available. Your game is %s. Update downloads only what changed, then compiles what changed."
+                            % (target, game))
+        elif self.mode == "up-to-date" and self.latest is None:
+            self.status.set("Your game is %s, as this builder. GitHub did not answer, so newer versions could not be checked." % game)
+        elif self.mode == "up-to-date":
+            self.status.set("%s is the latest version." % game)
+        elif self.mode == "update-builder":
+            self.status.set("Hookshot Builder %s is available (this one is %s). Update it first, then build." % (self.latest, self.tools or "this one"))
+        else:
+            self.status.set("")
+
+    def apply_launch(self):
+        if not self.launch_folder or not hasattr(self, "launch_status"):
+            return
+        game, kept = linux_update.game_version(self.launch_folder)
+        target = self.latest or self.tools
+        show = False
+        if target and game and game != target and kept:
+            self.launch_status.set("Update available: %s" % target)
+            show = True
+        elif target and game and game != target:
+            self.launch_status.set("%s is out. Build this folder again with Hookshot Builder to get it." % target)
+        elif game and self.latest is None:
+            self.launch_status.set("Up to date with this builder (GitHub did not answer)")
+        elif game:
+            self.launch_status.set("Up to date")
+        else:
+            self.launch_status.set("Could not check for updates (GitHub did not answer)" if self.latest is None else "Hookshot")
+        if hasattr(self, "launch_update"):
+            self.launch_update.pack(side="right", padx=4) if show else self.launch_update.pack_forget()
+
+    def show_launch(self, folder):
+        if self.page:
+            self.page.destroy()
+        self.title("Hookshot")
+        f = self.page = ttk.Frame(self)
+        f.pack(fill="both", expand=True, pady=8)
+        game, _kept = linux_update.game_version(folder)
+        ttk.Label(f, text="Hookshot %s" % game if game else "Hookshot", font=("TkDefaultFont", 16, "bold")).pack(anchor="w", **self.pad)
+        ttk.Label(f, text=folder, wraplength=560).pack(anchor="w", **self.pad)
+        self.launch_status = tk.StringVar(value="Checking for updates...")
+        ttk.Label(f, textvariable=self.launch_status, wraplength=560).pack(anchor="w", **self.pad)
+        buttons = ttk.Frame(f)
+        buttons.pack(anchor="e", **self.pad)
+        self.launch_update = ttk.Button(buttons, text="Update", command=lambda: self.begin_update(folder))
+        ttk.Button(buttons, text="Play", command=lambda: self.play_and_close(folder)).pack(side="right", padx=4)
+        ttk.Button(buttons, text="Open folder", command=lambda: subprocess.Popen(["xdg-open", folder])).pack(side="right", padx=4)
+        self.lookup_latest()
+
+    def begin_update(self, folder=None):
+        if folder is not None:
+            self.update_folder = folder
+        self.show_progress("Updating your game" if self.update_folder else "Updating Hookshot Builder")
+        folder = self.update_folder
+        # (a game older than this builder is built again with it: nothing to download, and GitHub need not answer)
+        fetched = self.fetched or bool(folder and self.tools and (self.update_tag or self.latest or self.tools) == self.tools)
+
+        def run():
+            try:
+                if not fetched:
+                    root = linux_update.running_root()
+                    if root is None:
+                        raise RuntimeError("These tools are a source checkout, so they cannot download a release. Start the AppImage to update.")
+                    manifest = linux_update.fetch_manifest()
+                    if manifest.tag != linux_update.tools_tag(root):
+                        source = linux_update.read_manifest(root)
+                        apprun = linux_update.install(manifest, root, source, note=lambda message: self.lines.put(("note", message)))
+                        for name in ("APPDIR", "APPIMAGE", "ARGV0", "OWD", "LD_LIBRARY_PATH"):
+                            os.environ.pop(name, None)
+                        args = [apprun]
+                        if folder:
+                            args += ["--update", folder, "--tag", manifest.tag, "--fetched"]
+                        os.execv(apprun, args)
+                self.lines.put(("do-build", folder or ""))
+            except Exception as error:
+                self.lines.put(("update-error", str(error)))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def start_make_update(self, folder):
+        if not folder:
+            self.show_form()
+            self.status.set("This builder is the latest version.")
+            self.lookup_latest()
+            return
+        cmd = [sys.executable, "-I", os.path.join(ROOT, "nx2", "make_game.py"), "--update", folder]
+        self.heading.configure(text="Updating your game")
+        self.stage_text.set("Compiling what changed")
+        self.started = time.time()
+        self.proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                                     encoding="utf-8", errors="replace", start_new_session=True)
+        threading.Thread(target=self.read, args=(self.proc,), daemon=True).start()
+        self.tick()
+
     # ---- the build ----
     def build(self):
+        mode = getattr(self, "mode", "build")
+        if mode == "up-to-date":
+            folder = os.path.expanduser(self.out.get().strip())
+            if game_ready(folder):
+                self.play_and_close(folder)
+            return
+        if mode == "update-game":
+            self.fetched = False
+            self.begin_update(os.path.expanduser(self.out.get().strip()))
+            return
+        if mode == "update-builder":
+            self.fetched = False
+            self.update_folder = ""
+            self.begin_update("")
+            return
         out = os.path.expanduser(self.out.get().strip())
         if self.kind.get() == "nup":
             if not os.path.isfile(self.nup.get()):
@@ -207,11 +400,19 @@ class Builder(tk.Tk):
             src = ["--romfs", self.romfs.get(), "--exefs", self.exefs.get()]
         if not out:
             return messagebox.showerror("Hookshot", "Choose where to save the game.")
+        try:
+            jobs = make_game.requested_jobs(os.environ.get("HOOKSHOT_JOBS"))
+            if jobs is None and os.environ.get("RX_JOBS"):   # (the older setting, still honoured)
+                jobs = toolchain.default_jobs()
+        except ValueError as error:
+            return messagebox.showerror("Hookshot", str(error))
         code = next((c for c, n in make_game.LANGUAGES if n == self.language.get()), "en-US")
         self.cfg.update(kind=self.kind.get(), nup=self.nup.get(), romfs=self.romfs.get(), exefs=self.exefs.get(), out=out, language=code)
         save_config(self.cfg)
-        jobs = toolchain.default_jobs(3.5)   # (what fits in memory: a big chunk takes up to ~3.5 GB to compile)
-        cmd = [sys.executable, "-I", os.path.join(ROOT, "nx2", "make_game.py")] + src + ["--out", out, "--language", code, "--jobs", str(jobs)]
+        # (issue 531) Without HOOKSHOT_JOBS or RX_JOBS, make_game chooses as on Windows, from the memory free now; this window chose
+        # fewer, 80% of the total memory at 3.5 GB each, and the CPU sat at 29%
+        cmd = [sys.executable, "-I", os.path.join(ROOT, "nx2", "make_game.py")] + src + ["--out", out, "--language", code] + \
+            ([] if jobs is None else ["--jobs", str(jobs)])
         self.show_progress()
         self.started = time.time()
         self.proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
@@ -223,13 +424,19 @@ class Builder(tk.Tk):
             self.lines.put(("line", line.rstrip("\n")))
         self.lines.put(("exit", proc.wait()))
 
-    def show_progress(self):
-        self.page.destroy()
+    def show_progress(self, title="Building"):
+        if self.page:
+            self.page.destroy()
+        self.changed, self.compiled_files = -1, 0
+        self.eta = None
+        self.compile_started = None
+        self.times = None
         f = self.page = ttk.Frame(self)
         f.pack(fill="both", expand=True, pady=8)
         f.columnconfigure(0, weight=1)
         f.rowconfigure(5, weight=1)
-        ttk.Label(f, text="Building", font=("TkDefaultFont", 16, "bold")).grid(row=0, column=0, sticky="w", **self.pad)
+        self.heading = ttk.Label(f, text=title, font=("TkDefaultFont", 16, "bold"))
+        self.heading.grid(row=0, column=0, sticky="w", **self.pad)
         ttk.Label(f, text="This takes a while, and your PC stays usable.").grid(row=1, column=0, sticky="w", **self.pad)
         ttk.Label(f, textvariable=self.stage_text).grid(row=2, column=0, sticky="w", **self.pad)
         self.bar = ttk.Progressbar(f, maximum=1.0, mode="determinate")
@@ -246,7 +453,13 @@ class Builder(tk.Tk):
     def tick(self):
         if self.proc and self.proc.poll() is None:
             s = int(time.time() - self.started)
-            self.time_text.set("Elapsed %d:%02d:%02d" % (s // 3600, s // 60 % 60, s % 60))
+            text = "Elapsed %d:%02d:%02d" % (s // 3600, s // 60 % 60, s % 60)
+            if self.compile_started:
+                c = int(time.time() - self.compile_started)
+                text += " · compiling %d:%02d" % (c // 60, c % 60)
+            if self.eta is not None:
+                text += " · " + left_text(self.eta)
+            self.time_text.set(text)
             self.after(1000, self.tick)
 
     def pump(self):
@@ -255,6 +468,21 @@ class Builder(tk.Tk):
                 kind, v = self.lines.get_nowait()
                 if kind == "check":
                     self.check_text.set(v)
+                elif kind == "latest":
+                    self.latest = v or None
+                    self.apply_mode()
+                elif kind == "note":
+                    if hasattr(self, "stage_text"):
+                        self.stage_text.set(v)
+                elif kind == "do-build":
+                    self.start_make_update(v)
+                elif kind == "update-error":
+                    if hasattr(self, "stage_text"):
+                        self.stage_text.set(v + " Your game folder is unchanged.")
+                    if hasattr(self, "buttons"):
+                        for widget in self.buttons.winfo_children():
+                            widget.destroy()
+                        ttk.Button(self.buttons, text="Back", command=self.show_form).pack(side="right", padx=4)
                 elif kind == "line":
                     self.on_line(v)
                 elif kind == "exit":
@@ -268,11 +496,46 @@ class Builder(tk.Tk):
             stage = line.split(" ", 2)[1]
             self.stage_text.set(STAGES.get(stage, line.split(" ", 2)[-1]))
             self.bar.configure(mode="determinate", value=0)
+            if stage == "compile":
+                self.compile_started = time.time()
         elif line.startswith("@@progress "):
             try:
                 self.bar.configure(value=float(line.split()[1]))
             except ValueError:
                 pass
+        elif line.startswith("@@plan "):
+            parts = line.split(" ")
+            if len(parts) == 3:
+                try:
+                    self.changed, total = int(parts[1]), int(parts[2])
+                except ValueError:
+                    pass
+                else:
+                    self.stage_text.set("Compiling: everything is already built" if not self.changed else
+                                        "Compiling %d changed files of %d" % (self.changed, total) if self.changed < total else
+                                        "Compiling %d files" % total)
+            return
+        elif line.startswith("@@file "):
+            parts = line.split(" ")
+            if len(parts) == 4 and parts[3] in ("new", "again"):
+                self.compiled_files += 1
+                if self.changed > 0:
+                    self.stage_text.set("Compiling %d of %d changed files" % (self.compiled_files, self.changed))
+            return
+        elif line.startswith("@@eta "):
+            try:
+                self.eta = float(line.split()[1])
+            except (ValueError, IndexError):
+                pass
+            return
+        elif line.startswith("@@times "):
+            parts = line.split(" ")
+            if len(parts) == 4:
+                try:
+                    self.times = (float(parts[1]), float(parts[2]), float(parts[3]))
+                except ValueError:
+                    pass
+            return
         elif line.startswith("@@done "):
             self.built = line[7:]
         elif line.startswith("@@error "):
@@ -288,7 +551,13 @@ class Builder(tk.Tk):
         folder = getattr(self, "built", None)
         if code == 0 and folder and game_ready(folder):
             s = int(time.time() - self.started)
-            self.stage_text.set("Your game is ready, built in %d:%02d" % (s // 3600, s // 60 % 60))
+            text = "Your game is ready, built in %d:%02d" % (s // 3600, s // 60 % 60)
+            if self.times:
+                total, compiled, previous = self.times
+                text += ", compiled in %d:%02d" % (int(compiled) // 60, int(compiled) % 60)
+                if previous > 0:
+                    text += " · last time %d:%02d" % (int(previous) // 3600, int(previous) // 60 % 60)
+            self.stage_text.set(text)
             self.bar.configure(value=1.0)
             try:
                 add_to_menu(folder)
@@ -319,11 +588,18 @@ class Builder(tk.Tk):
 
 def main():
     if "--play" in sys.argv[1:]:
-        folder = load_config().get("out")
+        folder = _arg("--play") or load_config().get("out")
         if game_ready(folder):
             play(folder)
             return
-    Builder().mainloop()
+    launch = _arg("--launch")
+    update = _arg("--update")
+    if update is not None:
+        Builder(update=update, fetched="--fetched" in sys.argv[1:], tag=_arg("--tag")).mainloop()
+    elif launch:
+        Builder(launch=launch).mainloop()
+    else:
+        Builder().mainloop()
 
 
 if __name__ == "__main__":
