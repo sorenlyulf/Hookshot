@@ -183,7 +183,7 @@ jobs:
           if [ "${{ matrix.distro }}" = ubuntu-24.04 ]; then
             apt update && sudo apt install -y g++
           else
-            pacman -S --noconfirm --needed gcc python
+            pacman -Syu --noconfirm --needed gcc python
           fi
       - name: Check failed-import backoff
         run: python -I -B tests/test_import_hold.py
@@ -270,7 +270,7 @@ jobs:
           if [ "${{ matrix.distro }}" = ubuntu.24.04 ]; then
             apt update && sudo apt install -y clang spirv-tools
           else
-            pacman -S --noconfirm --needed clang cmake spirv-tools
+            pacman -Sy --noconfirm --needed clang cmake spirv-tools
           fi
       - name: Configure the focused real-IR fixture
         run: >-
