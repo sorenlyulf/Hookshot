@@ -145,6 +145,7 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python:
     name: Python source checks (${{ matrix.distro }})
@@ -154,18 +155,11 @@ jobs:
         include:
           - distro: ubuntu
             runner: ubuntu-24.04
-            container: ''
           - distro: archlinux
-            runner: ubuntu-24.04
-            container: archlinux/archlinux:latest
+            runner: archlinux:latest
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container != '' && matrix.container || null }}
     timeout-minutes: 10
-    
     steps:
-      - name: System packages
-        run: |
-          pacman -Syu --noconfirm --needed python
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -190,7 +184,7 @@ jobs:
           if [ "${{ matrix.distro }}" = ubuntu ]; then
             sudo apt-get update && sudo apt-get install -y g++
           else
-            pacman -Sy --noconfirm --needed gcc
+            pacman -S --noconfirm --needed gcc
           fi
       - name: Check failed-import backoff
         run: python -I -B tests/test_import_hold.py
@@ -257,14 +251,10 @@ jobs:
         include:
           - distro: ubuntu
             runner: ubuntu-24.04
-            container: ''
           - distro: archlinux
-            runner: ubuntu-24.04
-            container: archlinux/archlinux:latest
+            runner: archlinux:latest
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container != '' && matrix.container || null }}
     timeout-minutes: 20
-
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -282,7 +272,7 @@ jobs:
           if [ "${{ matrix.distro }}" = ubuntu ]; then
             sudo apt-get update && sudo apt-get install -y clang spirv-tools
           else
-            pacman -Sy --noconfirm --needed clang cmake spirv-tools
+            pacman -S --noconfirm --needed clang cmake spirv-tools
           fi
       - name: Configure the focused real-IR fixture
         run: >-
