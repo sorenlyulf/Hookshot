@@ -74,7 +74,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Hookshot-linux-arch-x86_64
+          name: Hookshot-ROLLING.CachyOS.-x86_64
           path: build-linux/*.AppImage
           if-no-files-found: error
 
