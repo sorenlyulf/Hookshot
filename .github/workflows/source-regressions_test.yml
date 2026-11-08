@@ -155,9 +155,9 @@ jobs:
           - distro: ubuntu
             runner: ubuntu-24.04
             container: ''
-          - distro: cachyos
+          - distro: archlinux
             runner: ubuntu-24.04
-            container: cachyos/cachyos:latest
+            container: archlinux/archlinux:latest
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container != '' && matrix.container || null }}
     timeout-minutes: 10
@@ -255,9 +255,9 @@ jobs:
           - distro: ubuntu
             runner: ubuntu-24.04
             container: ''
-          - distro: cachyos
+          - distro: archlinux
             runner: ubuntu-24.04
-            container: cachyos/cachyos:latest
+            container: archlinux/archlinux:latest
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container != '' && matrix.container || null }}
     timeout-minutes: 20
