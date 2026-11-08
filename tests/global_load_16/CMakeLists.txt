@@ -18,7 +18,7 @@ file(GLOB_RECURSE SIRIT_SOURCES CONFIGURE_DEPENDS
     "${REPO_ROOT}/gpu/vk/sirit/src/*.cpp")
 
 add_executable(global_load_16_ir
-   "${CMAKE_CURRENT_SOURCE_DIR}/../global_load_16_ir.cpp"
+   "${REPO_ROOT}/tests/global_load_16_ir.cpp"
     ${BACKEND_SOURCES}
     ${IR_SOURCES}
     ${OPTIMIZATION_SOURCES}
