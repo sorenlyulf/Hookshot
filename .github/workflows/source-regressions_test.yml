@@ -147,7 +147,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
- python:
+  python:
     name: Python source checks (${{ matrix.distro }})
     strategy:
       fail-fast: false
@@ -155,12 +155,14 @@ jobs:
         include:
           - distro: ubuntu
             runner: ubuntu-24.04
-            container: '' # No container needed, runs directly on the Ubuntu host
+            container: ''
           - distro: cachyos
-            runner: ubuntu-24.04 # Use the standard GitHub runner
-            container: cachyos/cachyos:latest # Run the steps inside this image
+            runner: ubuntu-24.04
+            container: cachyos/cachyos:latest
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container != '' && matrix.container || null }}
     timeout-minutes: 10
+
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -253,12 +255,14 @@ jobs:
         include:
           - distro: ubuntu
             runner: ubuntu-24.04
-            container: '' # No container needed, runs directly on the Ubuntu host
+            container: ''
           - distro: cachyos
-            runner: ubuntu-24.04 # Use the standard GitHub runner
-            container: cachyos/cachyos:latest # Run the steps inside this image
+            runner: ubuntu-24.04
+            container: cachyos/cachyos:latest
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container != '' && matrix.container || null }}
     timeout-minutes: 20
+
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
