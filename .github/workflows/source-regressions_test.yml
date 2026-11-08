@@ -163,6 +163,9 @@ jobs:
     timeout-minutes: 10
     
     steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed python
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -187,7 +190,7 @@ jobs:
           if [ "${{ matrix.distro }}" = ubuntu ]; then
             sudo apt-get update && sudo apt-get install -y g++
           else
-            pacman -Sy gcc
+            pacman -Sy --noconfirm --needed gcc
           fi
       - name: Check failed-import backoff
         run: python -I -B tests/test_import_hold.py
@@ -279,7 +282,7 @@ jobs:
           if [ "${{ matrix.distro }}" = ubuntu ]; then
             sudo apt-get update && sudo apt-get install -y clang spirv-tools
           else
-            pacman -Sy clang cmake spirv-tools
+            pacman -Sy --noconfirm --needed clang cmake spirv-tools
           fi
       - name: Configure the focused real-IR fixture
         run: >-
