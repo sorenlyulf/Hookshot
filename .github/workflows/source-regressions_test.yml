@@ -181,7 +181,7 @@ jobs:
       - name: C++ compiler for the import-hold check
         run: |
           if [ "${{ matrix.distro }}" = ubuntu ]; then
-            apt-get update && sudo apt-get install -y g++
+            apt update && sudo apt install -y g++
           else
             pacman -S --noconfirm --needed gcc python
           fi
@@ -268,7 +268,7 @@ jobs:
       - name: Install Clang C++20, CMake and SPIR-V validator
         run: |
           if [ "${{ matrix.distro }}" = ubuntu ]; then
-            apt-get update && sudo apt-get install -y clang spirv-tools
+            apt update && sudo apt install -y clang spirv-tools
           else
             pacman -S --noconfirm --needed clang cmake spirv-tools
           fi
